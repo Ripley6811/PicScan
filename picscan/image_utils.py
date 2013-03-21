@@ -35,7 +35,7 @@ __version__ = '0.1'
 # IMPORT STATEMENTS
 #===============================================================================
 from PIL import Image, ImageDraw, ImageTk, ExifTags, ImageFilter
-from numpy import *  # IMPORTS ndarray(), arange(), zeros(), ones()
+#from numpy import *  # IMPORTS ndarray(), arange(), zeros(), ones()
 import cv2
 
 
@@ -178,8 +178,22 @@ class DisplayImage:
 
 
 
-    def get_histogram(self):
-        return self.im.histogram()
+    def get_histogram(self, size=(256,50)):
+        '''Returns a list of lists.'''
+        hdat = self.im.histogram()
+        scale = max(hdat[20:230]) / 256
+        him = Image.new("RGB", (256,1))
+        rgb_tuplist = [(min((255,hdat[i] / scale)),
+                        min((255,hdat[i+256] / scale)),
+                        min((255,hdat[i+512] / scale)))
+                        for i in range(256)]
+
+        him.putdata(rgb_tuplist, 1, 0)
+        him = him.resize(size)
+#        him.show()
+        self.him = ImageTk.PhotoImage( him )
+
+        return self.him
 
 
     def point(self, xy):

@@ -1,11 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-(SUMMARY)
+Sorting program for JPG+NEF image pairs.
 
-GUI for NikCut program
+Main program and GUI for PicScan program. The program creates a "save" folder
+and a "trash" folder within the folder of images. Use WASD to sort images into
+these folders. A "NEF_backup" folder is created within the "save" folder.
 
-:REQUIRES: ImageMagick-6.8 installed
+Controls:
+    Mousewheel, left key, right key = Goto prev or next image in folder.
+    Mousewheel down and scroll = Change size of full-size "zoom" window.
+    Mouse left button + move = "Zoom" window appears when clicking on image.
+    Mouse right button = Same as left button, but window dissappears when
+        button is released.
+    Spacebar, mouse right click = Removes the "zoom" window.
+    w = Move NEF to save folder and put a copy to backup folder. (w=save NEF)
+    a = Move JPG to save folder and move NEF to backup folder. (a=save all)
+    s = Move JPG to save folder and move NEF to trash folder. (s=save JPG only)
+    d = Move JPG and NEF to trash folder. (d=delete both)
+
+
+:REQUIRES: PIL
 :PRECONDITION: ...
 :POSTCONDITION: ...
 
@@ -63,6 +78,7 @@ class PicScan_GUI(Tkinter.Tk):
                                 focalPixel = (0.5,0.5),
                                 sobel = False,
                                 scale = 1.0,
+                                histogram = True,
                                 )
             with open( run_location + '\settings.ini', 'w' ) as wfile:
                 pickle.dump(self.dat, wfile)
@@ -192,7 +208,7 @@ class PicScan_GUI(Tkinter.Tk):
 
         address_bar_jpg_line.pack(side=Tkinter.LEFT)
         address_bar_nef_line.pack(side=Tkinter.LEFT)
-        Tkinter.Label(address_bar, text='A:Save All, S:Save JPG, W:Save NEF, D:Delete All').pack(side=Tkinter.LEFT,padx=0,pady=0)
+        Tkinter.Label(address_bar, text='A:Save All, S:Save JPG, W:Save NEF, D:Delete Both').pack(side=Tkinter.LEFT,padx=0,pady=0)
         address_bar.pack(side=Tkinter.TOP)
 
 
@@ -201,9 +217,12 @@ class PicScan_GUI(Tkinter.Tk):
     def create_image_canvas(self):
         self.canvas = Tkinter.Canvas(self, width=self.dat['maxWidth'], height=self.dat['maxHeight'], bg='black')
         self.canvas.bind("<ButtonPress-1>", self.click_pt) # DETERMINE NEW POINT OR GRAB EXISTING
+        self.canvas.bind("<ButtonPress-3>", self.click_pt) # DETERMINE NEW POINT OR GRAB EXISTING
 #        self.canvas.bind("<ButtonRelease-1>", self.endMotion) # FINALIZE BUTTON ACTION
-#        self.canvas.bind("<ButtonRelease-3>", self.drawOnCanvas)
+        self.canvas.bind("<ButtonRelease-3>", self.kill_zoom)
+        self.bind("<space>", self.kill_zoom)
         self.canvas.bind("<B1-Motion>", self.shiftImage)
+        self.canvas.bind("<B3-Motion>", self.shiftImage)
         self.bind("<Key>", self.keypress)
         self.bind("<Delete>", self.deletekey)
         self.bind("<Escape>", self.endsession)
@@ -217,9 +236,9 @@ class PicScan_GUI(Tkinter.Tk):
         self.canvas.pack(side=Tkinter.RIGHT, expand=Tkinter.YES, fill=Tkinter.BOTH)
 
 
-        self.f = plt.Figure(figsize=(5.0,1.0), dpi=100, facecolor='w', edgecolor='w')
-        self.dataPlot = FigureCanvasTkAgg(self.f, master=self.canvas)
-        self.dataPlot.get_tk_widget().pack(side=Tkinter.BOTTOM)
+#        self.f = plt.Figure(figsize=(5.0,1.0), dpi=100, facecolor='w', edgecolor='w')
+#        self.dataPlot = FigureCanvasTkAgg(self.f, master=self.canvas)
+#        self.dataPlot.get_tk_widget().pack(side=Tkinter.BOTTOM)
 
 
 
@@ -264,12 +283,14 @@ class PicScan_GUI(Tkinter.Tk):
 
         # Crop, anchor and display image
         self.disp_image.set_thumbnail( (tileW-2,tileH-2), self.dat['main_zoom'] )
-        self.canvas.create_image( (1, 1), image=self.disp_image.thumbnail, anchor=Tkinter.NW, tags='thumbnail')
-        self.disp_image.set_box( (0+600, 0+600, tileW+600, tileH+600) )
-        self.canvas.create_image( (tileW, 1), image=self.disp_image.image(), anchor=Tkinter.NW, tags='thumbnail')
+        self.canvas.create_image(self.disp_image.anchor,
+                                 image=self.disp_image.thumbnail,
+                                 anchor=Tkinter.NW, tags='thumbnail')
+#        self.disp_image.set_box( (0+600, 0+600, tileW+600, tileH+600) )
+#        self.canvas.create_image( (tileW, 1), image=self.disp_image.image(), anchor=Tkinter.NW, tags='thumbnail')
 
         # Overlay info and icons
-        self.canvas.create_rectangle( (1, 1, 200, 150), fill="black")
+        self.canvas.create_rectangle( (0, 0, 200, 150), fill="black")
         if self.fman.hasNEF():
             self.canvas.create_text( (5, 15), text='NEF available', anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
@@ -284,21 +305,22 @@ class PicScan_GUI(Tkinter.Tk):
             self.canvas.create_text( (5,60+i*15), text=each, anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
         if self.b1press:
-            print 'creating zoom'
             zoom_image = self.get_crop()
             # Calculate placement of full-size window
             placement = (self.b1press[0]-self.subwinsize, self.b1press[1]-self.subwinsize)
             self.canvas.create_image( placement, image=zoom_image, anchor=Tkinter.NW, tags='zoom')
 
-        self.f.clear()
-        r,g,b = [self.disp_image.get_histogram()[i*256:256+i*256] for i in [0,1,2]]
-        plt = self.f.add_axes([0.01,0.05,0.98,0.9], xlim=(0.,256), ylim=(0.,4*35342))
-        grey = [(r1+g1+b1)/3 for r1,g1,b1 in zip(r,g,b)]
-        plt.fill_between(range(256), 0, grey, color='grey')
-        plt.plot(r, color='r', linewidth=3)
-        plt.plot(g, color='g', linewidth=3)
-        plt.plot(b, color='b', linewidth=3)
-        self.dataPlot.show()
+        if self.dat.get('histogram'):
+#            self.f.clear()
+#            r,g,b = self.disp_image.get_histogram()
+#            plt = self.f.add_axes([0.01,0.05,0.98,0.9], xlim=(0.,256), ylim=(0.,4*35342))
+#            grey = [(r1+g1+b1)/3 for r1,g1,b1 in zip(r,g,b)]
+#            plt.fill_between(range(256), 0, grey, color='grey')
+#            plt.plot(r, color='r', linewidth=3)
+#            plt.plot(g, color='g', linewidth=3)
+#            plt.plot(b, color='b', linewidth=3)
+#            self.dataPlot.show()
+            self.canvas.create_image( (0,150), image=self.disp_image.get_histogram((201,40)), anchor=Tkinter.NW, tags='thumbnail')
 
 
 
@@ -367,8 +389,6 @@ class PicScan_GUI(Tkinter.Tk):
 
 
 
-
-
     def get_crop(self):
         ret_pt = self.disp_image.point(self.b1press)
         self.full_image = self.disp_image.image_full( ret_pt, radius=self.subwinsize )
@@ -391,11 +411,8 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def change_image(self, event):
-#        print event.state
-#        self.canvas.delete(Tkinter.ALL)
-        print event.type,'|', event.char,'|', event.keysym,'|', event.keycode,'|', event.state
+#        print event.type,'|', event.char,'|', event.keysym,'|', event.keycode,'|', event.state
 
-        print 'state', event.state
         # IF WHEEL TURNED, NOT HELD DOWN
         if (event.keycode == 37 and event.keysym == 'Left') or \
             (event.keycode == 120 and event.state == 8): # 10 is with caps lock
@@ -405,14 +422,7 @@ class PicScan_GUI(Tkinter.Tk):
             (event.keycode == -120 and event.state == 8): # 10 is with caps lock
             self.next_image(event, 1)
             return
-            # Switch main image size from full image fit to fitting the height of canvas
-#            try:
-#                if event.delta > 0:
-#
-#                elif event.delta < 0:
-#                    self.next_image(event,  1)
-#            except Warning:
-#                return
+
 #
         # IF WHEEL BUTTON DOWN AND TURNED
         elif event.state == 520 and event.keycode == 120:
@@ -426,17 +436,22 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def keypress(self, event):
-        if event.char in 'asdw':
+        if event.char in 'asdwh':
             if   event.char == 'd': self.fman.delALL()
             elif event.char == 'w': self.fman.saveNEF()
             elif event.char == 's': self.fman.saveJPG()
             elif event.char == 'a': self.fman.saveALL()
+            elif event.char == 'h':
+                self.dat['histogram'] = not self.dat.get('histogram')
+                self.f.set_visible( self.dat['histogram'] )
 
             self.disp_image = DisplayImage( self.fman.load() )
             self.show_image()
-        if event.char == ' ':
-            self.b1press = None
-            self.canvas.delete('zoom')
+
+
+    def kill_zoom(self, event):
+        self.b1press = None
+        self.canvas.delete('zoom')
 
 
 

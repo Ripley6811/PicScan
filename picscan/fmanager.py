@@ -35,6 +35,7 @@ __version__ = '0.1'
 #import os  # os.walk(basedir) FOR GETTING DIR STRUCTURE
 import tkFileDialog
 from os import rename, remove, path, mkdir, listdir
+from shutil import copy2
 from PIL import Image
 
 
@@ -69,12 +70,15 @@ class FileManager:
             save_dir = jpg_dir + '/save'
             if not path.exists(save_dir):
                 mkdir( save_dir )
+            if not path.exists(save_dir + '/NEF_backup'):
+                mkdir( save_dir + '/NEF_backup' )
 
         # Store global values
         self.jpg_dir = jpg_dir
         self.nef_dir = nef_dir
         self.trash_dir = trash_dir
         self.save_dir = save_dir
+        self.savenef_dir = save_dir + '/NEF_backup'
 
         # Create list of JPG and NEF in working directories
         self.jpg_list = []
@@ -146,7 +150,14 @@ class FileManager:
 
         saveJPG and saveNEF control whether JPGs and NEFs are moved to a
         save folder or to a trash folder.
+        If both saveJPG and saveNEF are True, then NEF is moved to a NEF folder
+        within the save folder.
         deleteNEF will permanently delete NEF instead of moving to trash.
+
+        False, True = NEF copy -> save, NEF -> save backup, JPG -> trash
+        True, True = JPG -> save, NEF -> save backup
+        True, False = JPG -> save, NEF -> trash
+        False, False = NEF and JPG -> trash
         '''
         # Remove and store name of JPG
         jpg_file = self.jpg_list.pop(self.curr)
@@ -156,8 +167,15 @@ class FileManager:
         if nef_file in self.nef_list:
             # Move NEF
             if saveNEF:
-                rename( path.join( self.nef_dir, nef_file ),
-                        path.join( self.save_dir, nef_file ) )
+                if not path.exists(self.savenef_dir):
+                    print self.savenef_dir
+                    mkdir( self.savenef_dir )
+                if not saveJPG: # Put a copy in the save folder
+                    copy2(path.join( self.nef_dir, nef_file ),
+                          path.join( self.save_dir, nef_file ) )
+                # Transfer NEF to save folder's NEF backup
+                rename(path.join( self.nef_dir, nef_file ),
+                       path.join( self.savenef_dir, nef_file ) )
             elif deleteNEF:
                 remove( path.join( self.nef_dir, nef_file ) )
             else:
