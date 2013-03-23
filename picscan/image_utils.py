@@ -151,6 +151,7 @@ class DisplayImage:
             scale = min(tsize[0]/float(self.size[0]),tsize[1]/float(self.size[1]))
 
             self.thumbnail = self.im.resize( tuple( int(x * scale) for x in self.size) )
+            self.anchor = ((tsize[0]-self.thumbnail.size[0])/2, 0)
             self.thumbnail = ImageTk.PhotoImage( self.thumbnail )
         self.scale = scale
 
@@ -204,7 +205,7 @@ class DisplayImage:
         Can use this method to retrieve the image coordinate of a clicked point.
         '''
         axy = self.anchor
-        cxy = (int(xy[0] / self.scale), int(xy[1] / self.scale))
+        cxy = (int((xy[0]-axy[0]) / self.scale), int((xy[1]-axy[1]) / self.scale))
 
 #        boxspan = self.box_span()
 #        for i in xrange(2):

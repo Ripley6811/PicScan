@@ -14,10 +14,11 @@ Controls:
     Mouse right button = Same as left button, but window dissappears when
         button is released.
     Spacebar, mouse right click = Removes the "zoom" window.
-    w = Move NEF to save folder and put a copy to backup folder. (w=save NEF)
-    a = Move JPG to save folder and move NEF to backup folder. (a=save all)
-    s = Move JPG to save folder and move NEF to trash folder. (s=save JPG only)
+    w = Move NEF to save folder and put a copy to backup folder. (w=keep NEF only)
+    a = Move JPG to save folder and move NEF to backup folder. (a=keep all)
+    s = Move JPG to save folder and move NEF to trash folder. (s=keep JPG only)
     d = Move JPG and NEF to trash folder. (d=delete both)
+    e = Undo last move
 
 
 :REQUIRES: PIL
@@ -30,7 +31,13 @@ Controls:
 :SINCE: Sun Jan 20 11:12:17 2013
 :VERSION: 0.1
 :STATUS: Nascent
-:TODO: ...
+
+:TODO: Add Sphinx documentation to methods
+:TODO: Preload images and show thumbnails at bottom, allow turning off and on.
+:TODO: Detect and show how many similar images are in folder
+:TODO: Option to create 'save' folder or use current folder.
+:TODO: Option to show contents of both working and save folders.
+:TODO: Clear last image when there are none left in folder. Prompt for new folder maybe.
 """
 
 from pylab import *  # IMPORTS NumPy.*, SciPy.*, and matplotlib.*
@@ -230,8 +237,8 @@ class PicScan_GUI(Tkinter.Tk):
         self.bind("<Right>", self.change_image)
 
         self.canvas.bind_all("<MouseWheel>", self.change_image)
-        self.canvas.bind_all("<Up>", self.change_image)
-        self.canvas.bind_all("<Down>", self.change_image)
+        self.bind_all("<Up>", self.change_image)
+        self.bind_all("<Down>", self.change_image)
 
         self.canvas.pack(side=Tkinter.RIGHT, expand=Tkinter.YES, fill=Tkinter.BOTH)
 
@@ -244,8 +251,15 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def load_image(self, curr_dir=''):
-        """Load the images from the list of filenames."""
-        self.fman = FileManager()
+        """Load the images from the list of filenames.
+
+        """
+        use_saved_folder = False
+        try:
+            self.fman = FileManager(self.fman.work_dir, use_saved_folder=use_saved_folder)
+        except:
+            self.fman = FileManager(use_saved_folder=use_saved_folder)
+
         self.disp_image = DisplayImage( self.fman.load() )
 
         self.show_image()
@@ -275,6 +289,9 @@ class PicScan_GUI(Tkinter.Tk):
         self.canvas.delete('text')
         self.canvas.delete('thumbnail')
         self.canvas.delete('zoom')
+
+        if self.disp_image == None:
+            return
 
 
         maxW = self.dat['maxWidth']
@@ -331,9 +348,9 @@ class PicScan_GUI(Tkinter.Tk):
 
 
 
-    def change_mode(self):
-        self.get_thumbs()
-        self.refresh_display()
+#    def change_mode(self):
+#        self.get_thumbs()
+#        self.refresh_display()
 
     def change_click_mode(self):
         print "i'm in!", self.rb.get()
@@ -366,7 +383,6 @@ class PicScan_GUI(Tkinter.Tk):
         if event.widget == self.canvas:
             # GET ASSOCIATED IMAGE
             self.b1press = (event.x, event.y)
-            ret_pt = self.disp_image.point(self.b1press)
 
             if self.disp_image != None:
                 if self.disp_image.point( self.b1press ):
@@ -425,9 +441,11 @@ class PicScan_GUI(Tkinter.Tk):
 
 #
         # IF WHEEL BUTTON DOWN AND TURNED
-        elif event.state == 520 and event.keycode == 120:
+        elif (event.keycode == 38 and event.keysym == 'Up') or \
+            (event.state == 520 and event.keycode == 120):
             self.subwinsize += 25
-        elif event.state == 520 and event.keycode == -120:
+        elif (event.keycode == 40 and event.keysym == 'Down') or \
+            (event.state == 520 and event.keycode == -120):
             self.subwinsize -= 25
 
         if self.b1press:
@@ -436,7 +454,7 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def keypress(self, event):
-        if event.char in 'asdwh':
+        if event.char and event.char in 'asdwhe':
             if   event.char == 'd': self.fman.delALL()
             elif event.char == 'w': self.fman.saveNEF()
             elif event.char == 's': self.fman.saveJPG()
@@ -444,9 +462,11 @@ class PicScan_GUI(Tkinter.Tk):
             elif event.char == 'h':
                 self.dat['histogram'] = not self.dat.get('histogram')
                 self.f.set_visible( self.dat['histogram'] )
+            elif event.char == 'e': self.fman.undo_last()
 
             self.disp_image = DisplayImage( self.fman.load() )
             self.show_image()
+#        print 'event.char', event.char
 
 
     def kill_zoom(self, event):
@@ -456,7 +476,10 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def next_image(self, event, val=0):
-        self.disp_image = DisplayImage( self.fman.load(val) )
+        try:
+            self.disp_image = DisplayImage( self.fman.load(val) )
+        except:
+            self.disp_image = None
 
         self.show_image()
 
