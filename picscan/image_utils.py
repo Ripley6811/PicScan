@@ -9,7 +9,7 @@ of a thumbnail of any size, converting points from display location to image
 location. (Tried OpenCV, but images displayed faster in Tkinter with PIL.)
 
 
-:REQUIRES: ...
+:REQUIRES: exiftool.exe 'http://www.sno.phy.queensu.ca/~phil/exiftool/'
 :PRECONDITION: ...
 :POSTCONDITION: ...
 
@@ -17,9 +17,9 @@ location. (Tried OpenCV, but images displayed faster in Tkinter with PIL.)
 :ORGANIZATION: National Cheng Kung University, Department of Earth Sciences
 :CONTACT: python@boun.cr
 :SINCE: Thu Jan 31 19:51:08 2013
-:VERSION: 0.1
+:VERSION: 0.2
 :STATUS: Nascent
-:TODO: ...
+:TODO: Make exiftool.exe optional. If unavailable then revert to PIL methods.
 """
 #===============================================================================
 # PROGRAM METADATA
@@ -29,14 +29,17 @@ __contact__ = 'python@boun.cr'
 __copyright__ = ''
 __license__ = ''
 __date__ = 'Thu Jan 31 19:51:08 2013'
-__version__ = '0.1'
+__version__ = '0.2'
 
 #===============================================================================
 # IMPORT STATEMENTS
 #===============================================================================
 from PIL import Image, ImageDraw, ImageTk, ExifTags, ImageFilter
 #from numpy import *  # IMPORTS ndarray(), arange(), zeros(), ones()
+from collections import OrderedDict
 import cv2
+import subprocess
+from StringIO import StringIO
 
 
 #===============================================================================
@@ -45,11 +48,12 @@ import cv2
 class DisplayImage:
     '''Structure for holding an image and info on how it is displayed on screen.
     '''
-    def __init__(self, image, ID=0, anchor=(0,0), scale=1.0, fit=(0,0)):
+    def __init__(self, im_filename, ID=0, anchor=(0,0), scale=1.0, fit=(0,0)):
         '''Accepts PIL image. 'fit' overrides 'scale' if given as a parameter.
         '''
         self.ID = ID
-        self.im = image
+        self.filename = im_filename
+        self.im = Image.open( im_filename )
 #        print os.getcwd()
 #        print filename, self.im
 #        y,x,b =
@@ -64,10 +68,16 @@ class DisplayImage:
         self.thumbnail = None
         self.focus = (self.size[0]/2,self.size[1]/2)
 
-        self.exif = dict()
+        self.exif = OrderedDict()
         info = self.im._getexif()
-        for tag in info:
-            self.exif[ExifTags.TAGS.get(tag)] = info.get(tag)
+
+
+        #TODO: Use exiftool.exe if available otherwise use the simpler PIL tool
+        self.get_exiftool_exif()
+#        for tag in info:
+#            self.exif[ExifTags.TAGS.get(tag)] = info.get(tag)
+
+
 
 
 
@@ -157,32 +167,109 @@ class DisplayImage:
 
 
     def get_exif(self):
-        exifsubset = []
+        tags = ['File Name', 'Directory', 'File Size', 'Image Size',
+                'File Creation Date/Time',
+             'Make', 'Camera Model Name',
+             'Artist', 'Copyright', 'User Comment',
+             'Aperture',
+             'Shutter Speed',
+             'ISO',
+             'Focal Length',
+             'Lens ID',
+#             'Date/Time Original', 'Create Date',
+#             'Image Width', 'Image Height',
+             'Exposure Compensation','Exposure Program',
+             'Flash',
+             'White Balance', 'Focus Mode',
+             'Exposure Difference', 'Exposure Tuning',
+             'Active D-Lighting',
+             'Lens',
+             'Focus Distance',
+             'Shutter Count',
+             'AF Fine Tune Adj',
+             'Color Space',
+             'Exposure Mode', 'Contrast', 'Saturation',
+             'Sharpness','Auto Focus',
+             'Depth Of Field', 'Field Of View',
+#             'Keywords',
+             ]
 
-        model = self.exif.get('Model')
-        if model:
-            exifsubset.append( 'Model: ' + model )
-        extime = self.exif.get('ExposureTime')
-        if extime:
-            exifsubset.append( 'Exposure: ' + '{:.4f}'.format( extime[0]/float(extime[1])) + ' (1/'+str(extime[1]/extime[0]) + ')' )
-        aperture = self.exif.get('FNumber')
-        if aperture:
-            exifsubset.append( 'Aperture: f/' + str( aperture[0]/float(aperture[1]) ) )
-        flen = self.exif.get('FocalLength')
-        if flen:
-            exifsubset.append( 'FocalLength: ' + str( flen[0]/float(flen[1]))  + 'mm' )
-        iso = self.exif.get('ISOSpeedRatings')
-        if iso:
-            exifsubset.append( 'ISO speed: ' + str( iso ) )
+#        ex = self.exif
+#        print ex.keys()
+
+        exifsubset = OrderedDict()
+
+        for tag in tags:
+            exifsubset[tag] = self.exif.get(tag)
+
+#        make = ex.get('Make')
+#        model = ex.get('Model')
+#
+#        if ex.get('Model'): exifsubset['Model'] = ex.get('Model')
+#        extime = ex.get('ExposureTime')
+#        if extime:
+#            exifsubset.append( 'Speed: ' + '{:.4f}'.format( extime[0]/float(extime[1])) + ' (1/'+str(extime[1]/extime[0]) + ')' )
+#        aperture = ex.get('FNumber')
+#        if aperture:
+#            exifsubset.append( 'Aperture: f/' + str( aperture[0]/float(aperture[1]) ) )
+#        iso = ex.get('ISOSpeedRatings')
+#        if iso:
+#            exifsubset.append( 'ISO speed: ' + str( iso ) )
+#        flen = ex.get('FocalLength')
+#        if flen:
+#            exifsubset.append( 'FocalLength: ' + str( flen[0]/float(flen[1]))  + 'mm' )
+#        if ex.get('Flash'):
+#            exifsubset
+
+
+#        print self.exif
+#        print type(self.exif)
+#        if self.exif.get('MakerNote'):
+#            print repr(self.exif.get('MakerNote'))
 
         return exifsubset
+
+
+    def get_exiftool_exif(self):
+        exifdata = subprocess.check_output(['exiftool.exe',
+                                 self.filename], shell=True)
+        exifdata = exifdata.splitlines()
+        for i, each in enumerate(exifdata):
+            tag,val = each.split(': ', 1)
+            self.exif[tag.strip()] = val.strip()
+
+
+
+    def get_exiftool_thumbnail(self):
+        try:
+            im_binary = subprocess.check_output(['exiftool.exe',
+                                                  self.filename,
+                                                  '-thumbnailimage',
+                                                  '-b'], shell=True)
+            image = Image.open( StringIO(im_binary) )
+            return image
+        except:
+            return None
+
+
+
+    def get_exiftool_preview(self):
+        try:
+            im_binary = subprocess.check_output(['exiftool.exe',
+                                                  self.filename,
+                                                  '-previewimage',
+                                                  '-b'], shell=True)
+            image = Image.open( StringIO(im_binary) )
+            return image
+        except:
+            return None
 
 
 
     def get_histogram(self, size=(256,50)):
         '''Returns a list of lists.'''
         hdat = self.im.histogram()
-        scale = max(hdat[20:230]) / 256
+        scale = max( (max(hdat[20:230]) / 256, 1) )
         him = Image.new("RGB", (256,1))
         rgb_tuplist = [(min((255,hdat[i] / scale)),
                         min((255,hdat[i+256] / scale)),

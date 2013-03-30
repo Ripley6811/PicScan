@@ -35,7 +35,6 @@ __version__ = '0.1'
 #import os  # os.walk(basedir) FOR GETTING DIR STRUCTURE
 import tkFileDialog
 from os import rename, path, mkdir, listdir #, remove
-from PIL import Image
 
 
 class FileManager:
@@ -138,7 +137,7 @@ class FileManager:
 
 
     def get_filename(self):
-        return path.join(*self.jpg_list[self.curr])
+        return self.jpg_list[self.curr]
 
 
     def newNEFdir(self, new_dir=r'C:/' ):
@@ -279,7 +278,7 @@ class FileManager:
             # Assert new index exists
             if 0 <= (self.curr + offset) < len(self.jpg_list):
                 self.curr += offset
-        return Image.open( path.join( *self.jpg_list[self.curr] ) )
+        return path.join( *self.jpg_list[self.curr] )
 
 
 def nef(jpg_filename):

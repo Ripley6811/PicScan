@@ -38,6 +38,10 @@ Controls:
 :TODO: Option to create 'save' folder or use current folder.
 :TODO: Option to show contents of both working and save folders.
 :TODO: Clear last image when there are none left in folder. Prompt for new folder maybe.
+:TODO: Make black square with data semi-transparent.
+:TODO: Show more metadata like file size, pixel size
+:TODO: Mark photos whether a 'decision' has been made. Be able to toggle just showing ones that haven't.
+:TODO: Add NEF viewing or place holder thumbnail.
 """
 
 from pylab import *  # IMPORTS NumPy.*, SciPy.*, and matplotlib.*
@@ -60,6 +64,21 @@ from fmanager import FileManager
 
 
 class PicScan_GUI(Tkinter.Tk):
+
+    # Make translucent background for EXIF data
+    layer = []
+    boxwidth = 360
+    boxheight = 1000
+    for i in range(boxheight):
+        layer += [255-i/4]*boxwidth
+
+    alpha = Image.new("L", (boxwidth,boxheight))
+    alpha.putdata( layer, 1, 0 )
+    exif_bg = Image.new("RGBA", (boxwidth,boxheight), (70,70,70,0))
+    exif_bg.putalpha(alpha)
+
+
+
 
 
     def load_settings(self, run_location ):
@@ -120,6 +139,7 @@ class PicScan_GUI(Tkinter.Tk):
 
         # MAIN SCREEN CANVAS BINDINGS
         self.create_image_canvas()
+        self.exif_bg = ImageTk.PhotoImage(self.exif_bg)
 
         # WINDOW PLACEMENT ON SCREEN
         try:
@@ -307,37 +327,41 @@ class PicScan_GUI(Tkinter.Tk):
 #        self.canvas.create_image( (tileW, 1), image=self.disp_image.image(), anchor=Tkinter.NW, tags='thumbnail')
 
         # Overlay info and icons
-        self.canvas.create_rectangle( (0, 0, 200, 150), fill="black")
+        self.canvas.create_image((0,0), image=self.exif_bg, anchor=Tkinter.NW, tags='text')
+
+
+        # Display Histogram and EXIF data
+        histo_offset = 0
+        if self.dat.get('histogram'):
+            self.canvas.create_image( (5,2), image=self.disp_image.get_histogram((350,30)), anchor=Tkinter.NW, tags='thumbnail')
+            histo_offset = 34
+
+        for i, each in enumerate(self.fman.get_filename()):
+            self.canvas.create_text( (5, histo_offset+i*15), text=each, anchor=Tkinter.NW,
+                                 fill='yellow', tags='text')
         if self.fman.hasNEF():
-            self.canvas.create_text( (5, 15), text='NEF available', anchor=Tkinter.NW,
+            self.canvas.create_text( (5, histo_offset+30), text='NEF available', anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
         else:
-            self.canvas.create_text( (5, 30), text='NEF not found', anchor=Tkinter.NW,
+            self.canvas.create_text( (5, histo_offset+30), text='NEF not found', anchor=Tkinter.NW,
                                  fill='grey', tags='text')
-        self.canvas.create_text( (5, 1), text=self.fman.get_filename(), anchor=Tkinter.NW,
-                                 fill='yellow', tags='text')
-        self.canvas.create_text( (5, 45), text=str(int(self.disp_image.scale*100))+'%', anchor=Tkinter.NW,
+        self.canvas.create_text( (5, histo_offset+45), text=str(int(self.disp_image.scale*100))+'%', anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
         for i, each in enumerate(self.disp_image.get_exif()):
-            self.canvas.create_text( (5,60+i*15), text=each, anchor=Tkinter.NW,
+            try:
+                self.canvas.create_text( (5,histo_offset+60+i*15), text=each + ' - ' + self.disp_image.exif[each], anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
+            except:
+                print 'error>>>', i, each
+
+
+        # Display 'zoom' window
         if self.b1press:
             zoom_image = self.get_crop()
             # Calculate placement of full-size window
             placement = (self.b1press[0]-self.subwinsize, self.b1press[1]-self.subwinsize)
             self.canvas.create_image( placement, image=zoom_image, anchor=Tkinter.NW, tags='zoom')
 
-        if self.dat.get('histogram'):
-#            self.f.clear()
-#            r,g,b = self.disp_image.get_histogram()
-#            plt = self.f.add_axes([0.01,0.05,0.98,0.9], xlim=(0.,256), ylim=(0.,4*35342))
-#            grey = [(r1+g1+b1)/3 for r1,g1,b1 in zip(r,g,b)]
-#            plt.fill_between(range(256), 0, grey, color='grey')
-#            plt.plot(r, color='r', linewidth=3)
-#            plt.plot(g, color='g', linewidth=3)
-#            plt.plot(b, color='b', linewidth=3)
-#            self.dataPlot.show()
-            self.canvas.create_image( (0,150), image=self.disp_image.get_histogram((201,40)), anchor=Tkinter.NW, tags='thumbnail')
 
 
 
