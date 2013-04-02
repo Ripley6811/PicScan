@@ -37,12 +37,11 @@ from numpy import linspace
 import subprocess
 from PIL import Image, ImageDraw, ImageChops, ImageFont
 import sys
-sys.path.append(r'C:\Dropbox\GitHub\PicScan\picscan')
+sys.path.append('..') # To access image_utils.py one level up
 from image_utils import DisplayImage
 import os
-os.chdir(r'C:\Dropbox\GitHub\PicScan\picscan')
+os.chdir('..') # To access exiftool.exe one level up
 import tkFileDialog
-from os import rename, path, mkdir, listdir #, remove
 
 #===============================================================================
 # METHODS
@@ -111,7 +110,8 @@ def add_watermark2(filename, mark=None):
     #image.show()
     image = im.im.convert("RGBA")
 #    print image
-    image.thumbnail((2048,2048))
+#    image.thumbnail((2048,2048), Image.BILINEAR)
+    image.thumbnail((2048,2048), Image.BICUBIC) # Sharper than BILINEAR
 #    print image
 #    print im.exif
 
@@ -126,6 +126,7 @@ def add_watermark2(filename, mark=None):
     font = ImageFont.truetype("verdana.ttf", 20)
     font = ImageFont.truetype("candara.ttf", 22)
     d7000font = ImageFont.truetype("impact.ttf", 18)
+    print im.exif
     lens = im.exif.get('Lens ID')
     if not lens:
         lens = im.exif.get('Lens')
@@ -149,6 +150,10 @@ def add_watermark2(filename, mark=None):
                     + 'ISO '+ str(im.exif.get('ISO'))
 #                    + '   ' + str(im.exif.get('Focal Length')).split('(')[0]
                     )
+    try:
+        exposure_string += '   ' + im.exif.get('Focus Mode') + ' ' + im.exif.get('Focus Distance')
+    except:
+        print "Focus Mode and Focus Distance error"
     width,height = font.getsize( exposure_string )
     try:
         lenswidth, height = font.getsize( lens )
@@ -176,32 +181,42 @@ def add_watermark2(filename, mark=None):
     if 'jay' in str(im.exif.get('Artist')).lower():
         waterback.paste(watername, (width_offset,14), watername)
     draw = ImageDraw.Draw(waterback)
-    if 'D7000' in im.exif.get('Camera Model Name'):
+    if 'D7000' in str(im.exif.get('Camera Model Name')):
         draw.text((width_offset+53,49), "&", font=d7000font)
         draw.text((width_offset+34,69), "D7000", font=d7000font)
     draw.text((width_offset+120,74), exposure_string, font=font)
+
+#    print 'Auto Focus:', im.exif.get('Auto Focus')
+#    print 'Focus Mode:', im.exif.get('Focus Mode')
+#    print 'Focus Position:', im.exif.get('Focus Position')
+#    for key in im.exif.keys():
+#        print key, im.exif[key]
+
 
 
 
     # Write name of lens on image
     try:
         draw.text((width_offset+120-19,48), lens, font=font)
+#        draw.text((width_offset+120-19,48), im.exif.get('Depth Of Field'), font=font)
     except:
         pass
 
     # Write focal length on image
-    try:
-#        draw.text((width_offset+120-19,22), im.exif.get('Artist'), font=font)
-#        draw.text((width_offset+120-19,22), str(im.exif.get('Focal Length')).split('(')[0], font=font)
-    except:
-        pass
+#    try:
+#        focus = im.exif.get('Focus Mode') + ' ' + im.exif.get('Focus Distance')# + ' DOF' + im.exif.get('Depth Of Field').split(' (')[0]
+#        draw.text((width_offset+120-19,22), focus, font=font)
+##        draw.text((width_offset+120-19,22), im.exif.get('Artist'), font=font)
+##        draw.text((width_offset+120-19,22), str(im.exif.get('Focal Length')).split('(')[0], font=font)
+#    except:
+#        pass
 
     image.paste(waterback, (-50, image.size[1]-100), waterback)
     #image.paste(watername, (0,0), watername)
 #    image.show()
 
-    savename = filename[:-4]+'_jwj2b.jpg'
-    image.save( savename )
+    savename = filename[:-4]+'_jwj.jpg'
+    image.save( savename, quality=99 )
     subprocess.call(['exiftool.exe',
                      savename,
                      '-tagsFromFile',

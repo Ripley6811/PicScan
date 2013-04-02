@@ -168,7 +168,7 @@ class DisplayImage:
 
     def get_exif(self):
         tags = ['File Name', 'Directory', 'File Size', 'Image Size',
-                'File Creation Date/Time',
+                'File Creation Date/Time', 'Date/Time Original',
              'Make', 'Camera Model Name',
              'Artist', 'Copyright', 'User Comment',
              'Aperture',

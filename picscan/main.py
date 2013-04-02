@@ -275,12 +275,15 @@ class PicScan_GUI(Tkinter.Tk):
 
         """
         use_saved_folder = False
+        self.filenames = []
         try:
             self.fman = FileManager(self.fman.work_dir, use_saved_folder=use_saved_folder)
         except:
             self.fman = FileManager(use_saved_folder=use_saved_folder)
 
-        self.disp_image = DisplayImage( self.fman.load() )
+        filename = self.fman.load()
+        self.filenames.append( filename )
+        self.disp_image = DisplayImage( filename )
 
         self.show_image()
 
@@ -488,7 +491,10 @@ class PicScan_GUI(Tkinter.Tk):
                 self.f.set_visible( self.dat['histogram'] )
             elif event.char == 'e': self.fman.undo_last()
 
-            self.disp_image = DisplayImage( self.fman.load() )
+            filename = self.fman.load()
+            if filename not in self.filenames:
+                self.filenames.append( filename )
+            self.disp_image = DisplayImage( filename )
             self.show_image()
 #        print 'event.char', event.char
 
@@ -513,7 +519,10 @@ class PicScan_GUI(Tkinter.Tk):
         if self.disp_image:
 
             self.fman.delALL()
-            self.disp_image = DisplayImage( self.fman.load() )
+            filename = self.fman.load()
+            if filename not in self.filenames:
+                self.filenames.append( filename )
+            self.disp_image = DisplayImage( filename )
             self.show_image()
 
 
