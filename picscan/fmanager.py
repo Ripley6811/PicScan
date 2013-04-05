@@ -35,15 +35,22 @@ __version__ = '0.1'
 #import os  # os.walk(basedir) FOR GETTING DIR STRUCTURE
 import tkFileDialog
 from os import rename, path, mkdir, listdir #, remove
+from collections import OrderedDict
+import thread
+import time
+
+
+
 
 
 class FileManager:
     curr = None # pointer to current index in jpg_list
+    thread_tasks = []
 
     def __init__(self, work_dir='', nef_dir='',
                  use_saved_folder=False,
                  include_saved_files=False,):
-        """Get a list of jpeg filenames from the directory where the user
+        """Get a list of jpeg and NEF filenames from the directory where the user
         selected a file.
 
         Pass an initial directory as the first parameter.
@@ -52,22 +59,23 @@ class FileManager:
         # Get JPG directory
         while True:
             filename = tkFileDialog.askopenfilename(
-                            filetypes=[("JPEG", ".jpg"),],
+#                            filetypes=[("JPEG", ".jpg"),("NEF", ".nef")],
                             initialdir=work_dir if work_dir else None,
                             )
-            self.work_dir, selected_file = path.split(filename)
+            self.dir, selected_file = path.split(filename)
             # Check filename is JPG
-            if selected_file.lower().endswith('jpg'):
+            selected_file = selected_file.lower()
+            if selected_file.endswith(('jpg','nef')):
                 break
 
         # Set up NEF directory
-        self.nef_dir = nef_dir if (nef_dir and path.exists(nef_dir)) else self.work_dir
+        self.nef_dir = nef_dir if (nef_dir and path.exists(nef_dir)) else self.dir
 
 
         # Store other default directories
-        self.trash_dir = self.work_dir + '/trash'
-        self.jpg_dest = self.work_dir + '/JPG'
-        self.nef_dest = self.work_dir + '/NEF'
+        self.trash_dir = self.dir + '/trash'
+        self.jpg_dest = self.dir + '/JPG'
+        self.nef_dest = self.dir + '/NEF'
         self.use_saved_folder = use_saved_folder
         self.include_saved_files = include_saved_files
 
@@ -76,11 +84,12 @@ class FileManager:
 
 
         # Find index of selected file in JPG list, default to 0
+#        print 'selected file', selected_file, selected_file in self.imfiles
         try:
-            self.curr = self.jpg_list.index((self.work_dir,selected_file))
+            self.curr = self.imfiles.index(selected_file)
         except:
             print 'file not found!'
-            self.curr = 0 if len(self.jpg_list) > 0 else None
+            self.curr = 0 if len(self.imfiles) > 0 else None
 
 
     def get_image_list(self, include_save_folder=False):
@@ -88,56 +97,40 @@ class FileManager:
 
         Names are stored as a tuple (directory, filename).
         '''
-        self.jpg_list = []
-        self.nef_list = []
+#        self.jpg_list = []
+#        self.nef_list = []
+        self.imfiles = []
+        self.imshow = []
 
         # Get list of JPG and NEF from work directory
-        for each in listdir(self.work_dir):
-            if each.lower().endswith('jpg'):
-                self.jpg_list.append((self.work_dir,each.lower()))
-            elif each.lower().endswith('nef'):
-                self.nef_list.append((self.work_dir,each.lower()))
+        for each in listdir(self.dir):
+            each = each.lower()
+            if each.endswith(('jpg','nef')):
+                self.imfiles.append( each )
+                if each.endswith('nef') and jpg(each) in self.imfiles:
+                    self.imshow.append(False)
+                else:
+                    self.imshow.append(True)
 
-        # If nef source dir is different than work dir, add to list
-        if self.nef_dir != self.work_dir:
-            for each in listdir(self.nef_dir):
-                if each.lower().endswith('nef'):
-                    self.nef_list.append((self.nef_dir,each.lower()))
 
-        # If already saved JPG and NEF are desired, add to respective lists
-        if include_save_folder:
-            for each in listdir(self.jpg_dest):
-                if each.lower().endswith('jpg'):
-                    self.jpg_list.append((self.jpg_dest,each.lower()))
-                elif each.lower().endswith('nef'):
-                    # NEF without JPGs will not be shown
-                    self.nef_list.append((self.jpg_dest,each.lower()))
-            for each in listdir(self.nef_dest):
-                if each.lower().endswith('nef'):
-                    self.nef_list.append((self.nef_dest,each.lower()))
+        self.imfiles.sort()
 
         # Sort JPG list by filename. NEF list does not need sorting
-        self.jpg_list.sort(key=lambda x: x[1])
+#        self.imfiles.sort(key=lambda x: x[1])
 
 
 
     def hasNEF(self):
         '''Returns True is NEF exists for the current image.'''
-        nef_file = nef(self.jpg_list[self.curr][1])
-        # Try to find index in NEF list, else set index to -1
-        try:
-            nef_index = [n[1] for n in self.nef_list].index(nef_file)
-        except:
-            nef_index = -1
-        # Return the NEF filename or False
-        if nef_index >= 0:
-            return self.nef_list[nef_index]
-        else:
-            return False
+        return nef(self.imfiles[self.curr]) in self.imfiles
+    def hasJPG(self):
+        '''Returns True is NEF exists for the current image.'''
+        return jpg(self.imfiles[self.curr]) in self.imfiles
+
 
 
     def get_filename(self):
-        return self.jpg_list[self.curr]
+        return self.dir, self.imfiles[self.curr]
 
 
     def newNEFdir(self, new_dir=r'C:/' ):
@@ -175,7 +168,7 @@ class FileManager:
 
 
     def move_curr(self, saveJPG=True, saveNEF=True ):
-        '''Moves the current NEF to save folder and moves JPG to trash.
+        '''File operations on the JPG and NEF files for an image.
 
         saveJPG and saveNEF control whether JPGs and NEFs are moved to a
         save folder or to a trash folder.
@@ -188,10 +181,10 @@ class FileManager:
         False, False = NEF and JPG -> trash
         '''
         # Remove and store name of JPG
-        jpg_file = self.jpg_list[self.curr]
+        jpg_file = jpg(self.imfiles[self.curr])
 
         # Does NEF exist, get tuple
-        nef_file = self.hasNEF()
+        nef_file = nef(self.imfiles[self.curr])
 
         self.undo = []
 
@@ -209,49 +202,56 @@ class FileManager:
                 mkdir( self.nef_dest )
 
 
-        if nef_file:
+        tasks = []
+        if self.hasNEF():
             # Move NEF
             if saveNEF and self.use_saved_folder:
-                rename(path.join( *nef_file ),
-                       path.join( self.nef_dest, nef_file[1] ) )
-                self.nef_list.remove(nef_file)
-                self.undo.append( (path.join( *nef_file ),
-                                   path.join( self.nef_dest, nef_file[1] ) ) )
+                tasks.append( "rename(path.join( self.dir, '" + nef_file
+                                        + "'), path.join( self.nef_dest, '" + nef_file + "' ) )" )
+                self.undo.append( (path.join( self.dir, nef_file ),
+                                   path.join( self.nef_dest, nef_file ) ) )
             if not saveNEF:
-                rename( path.join( *nef_file ),
-                        path.join( self.trash_dir, nef_file[1] ) )
-                self.nef_list.remove(nef_file)
-                self.undo.append( (path.join( *nef_file ),
-                                   path.join( self.trash_dir, nef_file[1] ) ) )
+                tasks.append( "rename(path.join( self.dir,'" + nef_file
+                                        + "'), path.join( self.trash_dir, '" + nef_file + "' ) )" )
+                self.undo.append( (path.join( self.dir, nef_file ),
+                                   path.join( self.trash_dir, nef_file ) ) )
+                self.imshow[self.imfiles.index(nef_file)] = False
 
-        # Move JPG
-        if saveJPG and self.use_saved_folder:
-            rename( path.join( *jpg_file ),
-                    path.join( self.jpg_dest, jpg_file[1] ) )
-            self.jpg_list.remove(jpg_file)
-            self.undo.append( (path.join( *jpg_file ),
-                               path.join( self.jpg_dest, jpg_file[1] ) ) )
-        if not saveJPG and not saveNEF:
-            rename( path.join( *jpg_file ),
-                    path.join( self.trash_dir, jpg_file[1] ) )
-            self.jpg_list.remove(jpg_file)
-            self.undo.append( (path.join( *jpg_file ),
-                               path.join( self.trash_dir, jpg_file[1] ) ) )
-        # If attempting to only save a non-existant NEF, then do nothing
-        elif not saveJPG and saveNEF and nef_file:
-            rename( path.join( *jpg_file ),
-                    path.join( self.trash_dir, jpg_file[1] ) )
-            self.jpg_list.remove(jpg_file)
-            self.undo.append( (path.join( *jpg_file ),
-                               path.join( self.trash_dir, jpg_file[1] ) ) )
 
+        if self.hasJPG():
+            # Move JPG
+            if saveJPG and self.use_saved_folder:
+                tasks.append( "rename(path.join( self.dir,'" + jpg_file
+                                        + "'), path.join( self.jpg_dest, '" + jpg_file + "' ) )" )
+                self.undo.append( (path.join( self.dir, jpg_file ),
+                                   path.join( self.jpg_dest, jpg_file ) ) )
+            if not saveJPG and not saveNEF:
+                tasks.append( "rename(path.join( self.dir,'" + jpg_file
+                                        + "'), path.join( self.trash_dir, '" + jpg_file + "' ) )" )
+                self.undo.append( (path.join( self.dir, jpg_file ),
+                                   path.join( self.trash_dir, jpg_file ) ) )
+                self.imshow[self.imfiles.index(jpg_file)] = False
+
+#        try:
+        thread.start_new_thread( self.run_tasks, (tasks,) )
+#        except:
+#            print "Error: unable to start thread.\n", tasks
+
+#        self.get_image_list()
 
         # Make sure curr points to an available file
-        nJPGs = len(self.jpg_list)
-        if self.curr >= nJPGs and nJPGs > 0:
-            self.curr = nJPGs - 1
-        elif nJPGs == 0:
-            self.curr = None
+        nJPGs = len(self.imfiles)
+        self.curr += 1
+        self.curr %= nJPGs
+        while self.imshow[self.curr] == False:
+            if nJPGs == 0:
+                self.curr = None
+                break
+            self.curr += 1
+            self.curr %= nJPGs
+            if True not in self.imshow:
+                self.curr == None
+                break
 
 
     def undo_last(self):
@@ -269,18 +269,36 @@ class FileManager:
                 self.nef_list.append( dirfile )
 
 
-    def load(self, offset=0):
+    def load(self, offset=0, change_curr=True):
         '''Loads the curr JPG.
 
         Set offset to +/-1 to load the next or prev image.
+        Set change_curr to False to preload or peek at a filename
         '''
+        if not change_curr:
+            tmp = self.curr
+        newi = self.curr + offset
         if offset != 0:
             # Assert new index exists
-            if 0 <= (self.curr + offset) < len(self.jpg_list):
-                self.curr += offset
-        return path.join( *self.jpg_list[self.curr] )
+            if 0 <= newi < len(self.imfiles):
+                if self.imshow[newi]:
+                    self.curr += offset
+                else:
+                    return self.load(offset+offset/abs(offset))
+        pth = path.join( self.dir, self.imfiles[self.curr] )
+        if not change_curr:
+            self.curr = tmp
+        return pth
 
 
-def nef(jpg_filename):
+    def run_tasks(self, tasks):
+        while tasks:
+            exec( tasks.pop(0) )
+        self.get_image_list()
+
+def nef(filename):
     '''Converts *.jpg filename to *.nef filename.'''
-    return jpg_filename[:-4] + '.nef'
+    return filename[:-4] + '.nef'
+def jpg(filename):
+    '''Converts *.nef filename to *.jpg filename.'''
+    return filename[:-4] + '.jpg'
