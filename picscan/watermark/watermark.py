@@ -9,16 +9,14 @@ I use this for my own images and it is not documented by you can adapt for your
 own use.
 
 :REQUIRES: image_utils.py in the PicScan package along with exiftool.exe
-:PRECONDITION: ...
-:POSTCONDITION: ...
+
+:TODO: ...
 
 :AUTHOR: Ripley6811
 :ORGANIZATION: National Cheng Kung University, Department of Earth Sciences
 :CONTACT: python@boun.cr
 :SINCE: Wed Mar 27 23:17:58 2013
 :VERSION: 0.1
-:STATUS: Nascent
-:TODO: ...
 """
 #===============================================================================
 # PROGRAM METADATA
@@ -35,6 +33,7 @@ __version__ = '0.1'
 #===============================================================================
 from numpy import linspace
 import subprocess
+from StringIO import StringIO
 from PIL import Image, ImageDraw, ImageChops, ImageFont
 import sys
 sys.path.append('..') # To access image_utils.py one level up
@@ -51,8 +50,7 @@ import tkFileDialog
 
 def add_watermark1(filename, mark=None):
     im = DisplayImage(filename)
-    #im.im.save(r'C:\Users\tutu\Desktop\tester.jpg')
-    #image.show()
+
     image = im.im.convert("RGBA")
     print image
     image.thumbnail((2048,2048))
@@ -105,6 +103,7 @@ def add_watermark1(filename, mark=None):
 def add_watermark2(filename, mark=None):
     '''Gradient/fading grey background with white text in lower left corner.'''
 
+
     im = DisplayImage(filename)
     #im.im.save(r'C:\Users\tutu\Desktop\tester.jpg')
     #image.show()
@@ -114,6 +113,7 @@ def add_watermark2(filename, mark=None):
     image.thumbnail((2048,2048), Image.BICUBIC) # Sharper than BILINEAR
 #    print image
 #    print im.exif
+
 
     mark = r'C:\Users\tutu\Desktop\jwj.png'
 
@@ -127,6 +127,19 @@ def add_watermark2(filename, mark=None):
     font = ImageFont.truetype("candara.ttf", 22)
     d7000font = ImageFont.truetype("impact.ttf", 18)
     print im.exif
+    lens = im.exif.get('Lens ID')
+    if not lens:
+        lens = im.exif.get('Lens')
+
+    if not lens:
+        print 'LOOKING FOR NEF'
+        exifdata = subprocess.check_output(['exiftool.exe',
+                                 filename.rsplit('_', 1)[0] + '.nef'], shell=True)
+        exifdata = exifdata.splitlines()
+        for i, each in enumerate(exifdata):
+            tag,val = each.split(': ', 1)
+            im.exif[tag.strip()] = val.strip()
+
     lens = im.exif.get('Lens ID')
     if not lens:
         lens = im.exif.get('Lens')
@@ -164,10 +177,13 @@ def add_watermark2(filename, mark=None):
     waterback = Image.new("RGBA", (width,120), (80,30,30,80))
     # Gradient
     r,g,b = 40,20,20
+
+    # Height of watermark box. Strength is the strongest opaqueness of box
     height = 100
-    waterback = Image.new("RGBA", (width,height), (40,20,20,120))
+    strength = 160
+    waterback = Image.new("RGBA", (width,height), (40,20,20,80))
     waterback_alpha = Image.new("L", (1, height), 0)
-    waterback_alpha.putdata( list(linspace(1,256,100).astype(int)) )
+    waterback_alpha.putdata( list(linspace(1,strength,height).astype(int)) )
     waterback_alpha = waterback_alpha.resize( (width, height) )
     fade_w = 100.
     for i in range(int(fade_w)):
@@ -223,6 +239,46 @@ def add_watermark2(filename, mark=None):
                      filename], shell=True)
 
 
+def get_exiftool_preview(filename):
+    try:
+        im_binary = subprocess.check_output(['exiftool.exe',
+                                              filename,
+                                              '-previewimage',
+                                              '-b'], shell=True)
+        image = Image.open( StringIO(im_binary) )
+        return image
+    except:
+        return None
+def get_exiftool_thumb(filename):
+    try:
+        im_binary = subprocess.check_output(['exiftool.exe',
+                                              filename,
+                                              '-thumbnailimage',
+                                              '-b'], shell=True)
+        image = Image.open( StringIO(im_binary) )
+        return image
+    except:
+        return None
+def get_exiftool_jpeg(filename):
+    try:
+        im_binary = subprocess.check_output(['exiftool.exe',
+                                              filename,
+                                              '-JpgFromRaw',
+                                              '-b'], shell=True)
+        image = Image.open( StringIO(im_binary) )
+        return image
+    except:
+        return None
+
+def get_exiftool_exif(filename):
+    exifdata = subprocess.check_output(['exiftool.exe',
+                             filename], shell=True)
+    exifdata = exifdata.splitlines()
+    exif = dict()
+    for i, each in enumerate(exifdata):
+        tag,val = each.split(': ', 1)
+        exif[tag.strip()] = val.strip()
+    return exif
 
 def add_watermark3(filename, mark=None):
     '''Simple Centered watermark.'''
@@ -305,10 +361,23 @@ def add_watermark3(filename, mark=None):
 def main():
     """Description of main()"""
 
-    filename = tkFileDialog.askopenfilename(multiple=True, initialdir=r'C:\Dropbox\Camera Uploads\testing')
+    filename = tkFileDialog.askopenfilename(multiple=True, initialdir=r'C:\Dropbox\Camera Uploads')
 #    work_dir, selected_file = path.split(filename)
     print filename
     filename = filename.strip('{}').split('} {')
+    print filename
+
+
+    print get_exiftool_exif(filename[0])
+
+
+#    preview = get_exiftool_preview(filename[0])
+#    preview.show()
+#    jpeg = get_exiftool_jpeg(filename[0])
+#    jpeg.show()
+#    thumb = get_exiftool_thumb(filename[0])
+#    thumb.show()
+
 
 #    filename = r'C:\Dropbox\Camera Uploads\testing\2013-03-27 17.47.13.jpg'
 #    filename = r'C:\Dropbox\Camera Uploads\testing\2013-03-27 13.39.35.jpg'
