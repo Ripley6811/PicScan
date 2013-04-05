@@ -34,6 +34,7 @@ __version__ = '0.2'
 #===============================================================================
 # IMPORT STATEMENTS
 #===============================================================================
+from os import remove
 from PIL import Image, ImageDraw, ImageTk, ExifTags, ImageFilter
 #from numpy import *  # IMPORTS ndarray(), arange(), zeros(), ones()
 from collections import OrderedDict
@@ -53,31 +54,38 @@ class DisplayImage:
         '''
         self.ID = ID
         self.filename = im_filename
-        self.im = Image.open( im_filename )
-#        print os.getcwd()
-#        print filename, self.im
-#        y,x,b =
-        self.size = self.im.size
+
+
+        if self.filename.endswith('nef'):
+            self.im = get_exiftool_jpeg( im_filename )
+        elif self.filename.endswith('jpg'):
+            self.im = Image.open( im_filename )
+#        else:
+#            self.filename = im_filename + '.jpg'
+#            self.im = Image.open( self.filename )
+
         self.scale = scale
         self.fit = fit # SET THE RETURN SCALING BY THE AREA IT MUST FIT INSIDE
         self.anchor = anchor # WHERE TOPLEFT OF IMAGE WILL BE PLACED IN DISPLAY AREA
-        self.cropbox = (0, 0, self.size[0], self.size[1])
 
         self.fit_scale() # OVERRIDES SCALE PARAMETER IF FIT IS SET
 
         self.thumbnail = None
-        self.focus = (self.size[0]/2,self.size[1]/2)
 
         self.exif = OrderedDict()
-        info = self.im._getexif()
+
 
 
         #TODO: Use exiftool.exe if available otherwise use the simpler PIL tool
         self.get_exiftool_exif()
-#        for tag in info:
-#            self.exif[ExifTags.TAGS.get(tag)] = info.get(tag)
 
-
+        if self.exif['Orientation'] == 'Rotate 270 CW':
+            self.im = self.im.rotate(90)
+        if self.exif['Orientation'] == 'Rotate 90 CW':
+            self.im = self.im.rotate(270)
+        self.size = self.im.size
+        self.cropbox = (0, 0, self.size[0], self.size[1])
+        self.focus = (self.size[0]/2,self.size[1]/2)
 
 
 
@@ -178,6 +186,7 @@ class DisplayImage:
              'Lens ID',
 #             'Date/Time Original', 'Create Date',
 #             'Image Width', 'Image Height',
+             'Orientation',
              'Exposure Compensation','Exposure Program',
              'Flash',
              'White Balance', 'Focus Mode',
@@ -194,8 +203,9 @@ class DisplayImage:
 #             'Keywords',
              ]
 
-#        ex = self.exif
+        ex = self.exif
 #        print ex.keys()
+#        print ex['Orientation']
 
         exifsubset = OrderedDict()
 
@@ -346,12 +356,29 @@ class DisplayImage:
             self.imcopy = self.im.crop( (pt[0]-radius, pt[1]-radius, pt[0]+radius, pt[1]+radius) )
         else:
             self.imcopy = self.im.copy()
-        print 'pt', pt, radius
-        print 'size', self.imcopy.size
+#        print 'pt', pt, radius
+#        print 'size', self.imcopy.size
         if Tk == True:
             self.imcopy = ImageTk.PhotoImage( self.imcopy )
         return self.imcopy
 
+
+    def make_jpg(self):
+        savename = self.filename[:-4]+'.jpg'
+#        if self.exif['Orientation'] == 'Rotate 270 CW':
+#            self.im.rotate(270).save( savename, quality=99 )
+#        elif self.exif['Orientation'] == 'Rotate 90 CW':
+#            self.im.rotate(90).save( savename, quality=99 )
+#        else:
+        self.im.save( savename, quality=99 )
+        subprocess.call(['exiftool.exe',
+                         savename,
+                         '-tagsFromFile',
+                         self.filename], shell=True)
+        subprocess.call(['exiftool.exe',
+                         savename,
+                         '-Orientation=Horizontal (normal)'], shell=True)
+        remove(savename + '_original')
 
 
 
@@ -365,3 +392,14 @@ class DisplayImage:
         return (pt[0]*self.scale - cxy[0]*self.scale + axy[0],
                 pt[1]*self.scale - cxy[1]*self.scale + axy[1])
 
+
+def get_exiftool_jpeg(filename):
+    try:
+        im_binary = subprocess.check_output(['exiftool.exe',
+                                              filename,
+                                              '-JpgFromRaw',
+                                              '-b'], shell=True)
+        image = Image.open( StringIO(im_binary) )
+        return image
+    except:
+        return None
