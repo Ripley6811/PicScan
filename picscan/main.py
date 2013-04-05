@@ -38,10 +38,11 @@ Controls:
 :TODO: Option to create 'save' folder or use current folder.
 :TODO: Option to show contents of both working and save folders.
 :TODO: Clear last image when there are none left in folder. Prompt for new folder maybe.
-:TODO: Make black square with data semi-transparent.
-:TODO: Show more metadata like file size, pixel size
+:DONE: Make black square with data semi-transparent.
+:DONE: Show more metadata like file size, pixel size
 :TODO: Mark photos whether a 'decision' has been made. Be able to toggle just showing ones that haven't.
-:TODO: Add NEF viewing or place holder thumbnail.
+:DONE: Add NEF viewing or place holder thumbnail.
+:TODO: Add subprocess to handle file management in background
 """
 
 from pylab import *  # IMPORTS NumPy.*, SciPy.*, and matplotlib.*
@@ -60,6 +61,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import pickle
 from image_utils import DisplayImage
 from fmanager import FileManager
+from collections import OrderedDict as odict
+import thread
 
 
 
@@ -123,6 +126,7 @@ class PicScan_GUI(Tkinter.Tk):
         self.load_settings( os.getcwd() )
         self.b1press = None
         self.subwinsize = 150
+        self.dat['dir_work'] = os.getcwd()
 
         try:
             os.chdir( self.dat['dir_work'] )
@@ -132,7 +136,7 @@ class PicScan_GUI(Tkinter.Tk):
 
         # CREATE THE MENU BAR
         self.create_menu()
-        self.create_top_controls()
+#        self.create_top_controls()
 
         # LEFT HAND SIDE CONTROLS
 #        self.create_left_controls()
@@ -151,6 +155,8 @@ class PicScan_GUI(Tkinter.Tk):
         self.canvas.bind('<Configure>', self.resize )
 
         # FINISHED GUI SETUP
+        self.imdatabase = odict()
+#        self.thumbs = odict()
         self.load_image()
 
         self.print_settings( 'Settings on initialization' )
@@ -245,7 +251,6 @@ class PicScan_GUI(Tkinter.Tk):
         self.canvas = Tkinter.Canvas(self, width=self.dat['maxWidth'], height=self.dat['maxHeight'], bg='black')
         self.canvas.bind("<ButtonPress-1>", self.click_pt) # DETERMINE NEW POINT OR GRAB EXISTING
         self.canvas.bind("<ButtonPress-3>", self.click_pt) # DETERMINE NEW POINT OR GRAB EXISTING
-#        self.canvas.bind("<ButtonRelease-1>", self.endMotion) # FINALIZE BUTTON ACTION
         self.canvas.bind("<ButtonRelease-3>", self.kill_zoom)
         self.bind("<space>", self.kill_zoom)
         self.canvas.bind("<B1-Motion>", self.shiftImage)
@@ -263,9 +268,6 @@ class PicScan_GUI(Tkinter.Tk):
         self.canvas.pack(side=Tkinter.RIGHT, expand=Tkinter.YES, fill=Tkinter.BOTH)
 
 
-#        self.f = plt.Figure(figsize=(5.0,1.0), dpi=100, facecolor='w', edgecolor='w')
-#        self.dataPlot = FigureCanvasTkAgg(self.f, master=self.canvas)
-#        self.dataPlot.get_tk_widget().pack(side=Tkinter.BOTTOM)
 
 
 
@@ -277,9 +279,10 @@ class PicScan_GUI(Tkinter.Tk):
         use_saved_folder = False
         self.filenames = []
         try:
-            self.fman = FileManager(self.fman.work_dir, use_saved_folder=use_saved_folder)
+            self.fman = FileManager(self.dat['jpg_dir'], use_saved_folder=use_saved_folder)
         except:
             self.fman = FileManager(use_saved_folder=use_saved_folder)
+        self.dat['jpg_dir'] = self.fman.dir
 
         filename = self.fman.load()
         self.filenames.append( filename )
@@ -322,7 +325,12 @@ class PicScan_GUI(Tkinter.Tk):
         tileH = self.dat['maxHeight']
 
         # Crop, anchor and display image
-        self.disp_image.set_thumbnail( (tileW-2,tileH-2), self.dat['main_zoom'] )
+        try:
+            w,h = self.disp_image.thumbnail.size
+        except:
+            w = h = 0
+        if tileW != w or tileH != h:
+            self.disp_image.set_thumbnail( (tileW-2,tileH-2), self.dat['main_zoom'] )
         self.canvas.create_image(self.disp_image.anchor,
                                  image=self.disp_image.thumbnail,
                                  anchor=Tkinter.NW, tags='thumbnail')
@@ -339,15 +347,24 @@ class PicScan_GUI(Tkinter.Tk):
             self.canvas.create_image( (5,2), image=self.disp_image.get_histogram((350,30)), anchor=Tkinter.NW, tags='thumbnail')
             histo_offset = 34
 
-        for i, each in enumerate(self.fman.get_filename()):
-            self.canvas.create_text( (5, histo_offset+i*15), text=each, anchor=Tkinter.NW,
-                                 fill='yellow', tags='text')
-        if self.fman.hasNEF():
-            self.canvas.create_text( (5, histo_offset+30), text='NEF available', anchor=Tkinter.NW,
-                                 fill='yellow', tags='text')
+#        for i, each in enumerate(self.fman.get_filename()):
+#            self.canvas.create_text( (5, histo_offset+i*15), text=each, anchor=Tkinter.NW,
+#                                 fill='yellow', tags='text')
+
+        if self.fman.hasJPG():
+            self.canvas.create_text( (360, 2), text='JPG', anchor=Tkinter.NW,
+                                 fill='yellow', tags='text', font='arial 16 bold')
         else:
-            self.canvas.create_text( (5, histo_offset+30), text='NEF not found', anchor=Tkinter.NW,
-                                 fill='grey', tags='text')
+            self.canvas.create_text( (360, 2), text='JPG', anchor=Tkinter.NW,
+                                 fill='grey', tags='text', font='arial 16')
+
+        if self.fman.hasNEF():
+            self.canvas.create_text( (360+55, 2), text='NEF', anchor=Tkinter.NW,
+                                 fill='yellow', tags='text', font='arial 16 bold')
+        else:
+            self.canvas.create_text( (360+55, 2), text='NEF', anchor=Tkinter.NW,
+                                 fill='grey', tags='text', font='arial 16')
+
         self.canvas.create_text( (5, histo_offset+45), text=str(int(self.disp_image.scale*100))+'%', anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
         for i, each in enumerate(self.disp_image.get_exif()):
@@ -375,10 +392,6 @@ class PicScan_GUI(Tkinter.Tk):
 
 
 
-#    def change_mode(self):
-#        self.get_thumbs()
-#        self.refresh_display()
-
     def change_click_mode(self):
         print "i'm in!", self.rb.get()
 #        if self.rb.get() == "Window Selection":
@@ -391,8 +404,6 @@ class PicScan_GUI(Tkinter.Tk):
 #            print "Measure Distance"
 #        if self.rb.get() == "Off":
 #            print "Off"
-#
-#        self.refresh_display()
 
 
 
@@ -448,9 +459,6 @@ class PicScan_GUI(Tkinter.Tk):
 
 
 
-    def endMotion(self, event):
-        self.inmotion = False
-
 
 
     def change_image(self, event):
@@ -484,8 +492,14 @@ class PicScan_GUI(Tkinter.Tk):
         if event.char and event.char in 'asdwhe':
             if   event.char == 'd': self.fman.delALL()
             elif event.char == 'w': self.fman.saveNEF()
-            elif event.char == 's': self.fman.saveJPG()
-            elif event.char == 'a': self.fman.saveALL()
+            elif event.char == 's':
+                if self.fman.hasJPG() == False:
+                    self.disp_image.make_jpg()
+                self.fman.saveJPG()
+            elif event.char == 'a':
+                if self.fman.hasJPG() == False:
+                    self.disp_image.make_jpg()
+                self.fman.saveALL()
             elif event.char == 'h':
                 self.dat['histogram'] = not self.dat.get('histogram')
                 self.f.set_visible( self.dat['histogram'] )
@@ -494,7 +508,10 @@ class PicScan_GUI(Tkinter.Tk):
             filename = self.fman.load()
             if filename not in self.filenames:
                 self.filenames.append( filename )
-            self.disp_image = DisplayImage( filename )
+            try:
+                self.disp_image = DisplayImage( filename )
+            except:
+                self.next_image(1)
             self.show_image()
 #        print 'event.char', event.char
 
@@ -506,13 +523,47 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def next_image(self, event, val=0):
-        try:
-            self.disp_image = DisplayImage( self.fman.load(val) )
-        except:
-            self.disp_image = None
+        self.currfile = self.fman.load(val)
+        if self.currfile in self.imdatabase:
+            print 'Preloaded', self.currfile
+            self.disp_image = self.imdatabase[self.currfile]
+        else:
+            try:
+                self.disp_image = DisplayImage( self.currfile )
+                maxW = self.dat['maxWidth']
+                tileW = maxW / 1
+                tileH = self.dat['maxHeight']
+                self.disp_image.set_thumbnail( (tileW-2,tileH-2), self.dat['main_zoom'] )
+                self.imdatabase[self.currfile] = self.disp_image
+            except:
+                self.disp_image = None
+
+        thread.start_new_thread( self.preload_images, () )
+
+
+        if len(self.imdatabase) > 12:
+            tmp,tmp = self.imdatabase.popitem(False)
+            del tmp
+        print 'Images in memory', len(self.imdatabase)
 
         self.show_image()
 
+
+
+    def preload_images(self):
+        for i in range(1,4):
+            filename = self.fman.load(i, False)
+            if filename not in self.imdatabase:
+                self.imdatabase[filename] = DisplayImage( filename )
+                maxW = self.dat['maxWidth']
+                tileW = maxW / 1
+                tileH = self.dat['maxHeight']
+                self.imdatabase[filename].set_thumbnail( (tileW-2,tileH-2), self.dat['main_zoom'] )
+#                self.thumbs[filename] = self.imdatabase[filename].thumbnail
+
+        if len(self.imdatabase) > 12:
+            tmp,tmp = self.imdatabase.popitem(False)
+            del tmp
 
 
     def deletekey(self, event):
@@ -527,72 +578,6 @@ class PicScan_GUI(Tkinter.Tk):
 
 
 
-    def refresh_display(self):
-        #print 'Refreshing'
-        self.refreshImage()
-        self.display_mask()
-        self.get_drawing()
-        self.refreshPolygon()
-        self.refreshText()
-
-
-
-    def display_mask(self):
-        if self.rb.get() == "Window Selection":
-            if not self.dat.get('subwindows'):
-                w,h = self.disp_images[0].size
-                self.dat['subwindows'] = \
-                    [array([(0,int(h*.3)),(0,int(h*.6)),(w,int(h*.6)),(w,int(h*.3))])
-                        for i in range(5)]
-
-            mask = Image.new('RGBA', [int(each) for each in self.geometry().split('+')[0].split('x')])
-
-            alpha = Image.new('L', mask.size, 100)
-            draw_alpha = ImageDraw.Draw(alpha)
-            for dimage in self.disp_images:
-                if dimage == None:
-                    break
-                cam = dimage.ID % 10
-                draw_alpha.polygon([dimage.to_disp_pt(xy) for xy in self.dat['subwindows'][cam]],
-                                    fill=0)
-            mask.putalpha( alpha )
-            self.mask = ImageTk.PhotoImage( mask )
-            self.canvas.create_image((0,0), image=self.mask, anchor=Tkinter.NW, tags='image' )
-        elif self.rb.get() == "Heading Selection":
-            mask = Image.new('RGBA', [int(each) for each in self.geometry().split('+')[0].split('x')])
-
-            alpha = Image.new('L', mask.size, 100)
-            draw_alpha = ImageDraw.Draw(alpha)
-            for dimage in self.disp_images:
-                if dimage == None:
-                    break
-                cam = dimage.ID % 10
-                if self.dat.get('im_forward'):
-                    fcam, xpos = self.dat.get('im_forward')
-                    if cam == fcam:
-                        draw_alpha.polygon([dimage.to_disp_pt((xpos-10,0)),
-                                            dimage.to_disp_pt((xpos-10,dimage.size[1])),
-                                            dimage.to_disp_pt((xpos+10,dimage.size[1])),
-                                            dimage.to_disp_pt((xpos+10,0))],
-                                            fill=0)
-            mask.putalpha( alpha )
-            self.mask = ImageTk.PhotoImage( mask )
-            self.canvas.create_image((0,0), image=self.mask, anchor=Tkinter.NW, tags='image' )
-
-
-
-
-
-    def refreshImage(self):
-        self.canvas.delete('image')
-
-
-        for dimage in self.disp_images[:nImage]:
-            if dimage:
-                imref = dimage.image()
-                self.canvas.create_image(dimage.anchor, image=imref, anchor=Tkinter.NW, tags='image' )
-
-
 
 
 
@@ -600,6 +585,7 @@ class PicScan_GUI(Tkinter.Tk):
         with open( self.run_location + '\settings.ini', 'w' ) as wfile:
             pickle.dump(self.dat, wfile)
         wfile.close()
+        del self.imdatabase
         self.quit()
 
 
