@@ -51,6 +51,7 @@ import os  # os.walk(basedir) FOR GETTING DIR STRUCTURE
 import Tkinter
 #import tkFileDialog # askopenfilename, asksaveasfilename, askdirectory
 from tkSimpleDialog import askstring
+import tkFileDialog
 from PIL import Image, ImageTk, ImageDraw
 #import thread
 #import time
@@ -60,6 +61,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 
 import pickle
 from image_utils import DisplayImage
+from image_utils import *
 from fmanager import FileManager
 from collections import OrderedDict as odict
 import thread
@@ -79,9 +81,6 @@ class PicScan_GUI(Tkinter.Tk):
     alpha.putdata( layer, 1, 0 )
     exif_bg = Image.new("RGBA", (boxwidth,boxheight), (70,70,70,0))
     exif_bg.putalpha(alpha)
-
-
-
 
 
     def load_settings(self, run_location ):
@@ -157,6 +156,7 @@ class PicScan_GUI(Tkinter.Tk):
         # FINISHED GUI SETUP
         self.imdatabase = odict()
 #        self.thumbs = odict()
+        self.mode = 'single'
         self.load_image()
 
         self.print_settings( 'Settings on initialization' )
@@ -276,35 +276,43 @@ class PicScan_GUI(Tkinter.Tk):
         """Load the images from the list of filenames.
 
         """
-        use_saved_folder = False
         self.filenames = []
-        try:
-            self.fman = FileManager(self.dat['jpg_dir'], use_saved_folder=use_saved_folder)
-        except:
-            self.fman = FileManager(use_saved_folder=use_saved_folder)
+#        try:
+#            filename = tkFileDialog.askopenfilename(
+#                            initialdir=self.dat['jpg_dir'],
+#                            )
+#            self.fman = FileManager(filename)
+#        except:
+        filename = tkFileDialog.askopenfilename(
+                        initialdir=self.dat['jpg_dir'],
+                        )
+        self.fman = FileManager(filename)
+
         self.dat['jpg_dir'] = self.fman.dir
 
         filename = self.fman.load()
         self.filenames.append( filename )
         self.disp_image = DisplayImage( filename )
 
+        thread.start_new_thread( self.preload_images, () )
+
         self.show_image()
 
 
 
 
-    def set_new_jpg_dir(self):
-        self.fman = FileManager()
-        self.jpg_dir.set(self.fman.jpg_dir)
-        self.dat['jpg_dir'] = self.fman.jpg_dir
-
-
-
-    def set_new_nef_dir(self):
-        new_dir = self.fman.newNEFdir( self.nef_dir.get() )
-
-        self.nef_dir.set( new_dir )
-        self.dat['nef_dir'] = new_dir
+#    def set_new_jpg_dir(self):
+#        self.fman = FileManager()
+#        self.jpg_dir.set(self.fman.jpg_dir)
+#        self.dat['jpg_dir'] = self.fman.jpg_dir
+#
+#
+#
+#    def set_new_nef_dir(self):
+#        new_dir = self.fman.newNEFdir( self.nef_dir.get() )
+#
+#        self.nef_dir.set( new_dir )
+#        self.dat['nef_dir'] = new_dir
 
 
 
@@ -365,8 +373,17 @@ class PicScan_GUI(Tkinter.Tk):
             self.canvas.create_text( (360+55, 2), text='NEF', anchor=Tkinter.NW,
                                  fill='grey', tags='text', font='arial 16')
 
+        if self.fman.hasDNG():
+            self.canvas.create_text( (360+55+55, 2), text='DNG', anchor=Tkinter.NW,
+                                 fill='yellow', tags='text', font='arial 16 bold')
+        else:
+            self.canvas.create_text( (360+55+55, 2), text='DNG', anchor=Tkinter.NW,
+                                 fill='grey', tags='text', font='arial 16')
+
         self.canvas.create_text( (5, histo_offset+45), text=str(int(self.disp_image.scale*100))+'%', anchor=Tkinter.NW,
                                  fill='yellow', tags='text')
+
+        # Write EXIF information
         for i, each in enumerate(self.disp_image.get_exif()):
             try:
                 self.canvas.create_text( (5,histo_offset+60+i*15), text=each + ' - ' + self.disp_image.exif[each], anchor=Tkinter.NW,
@@ -490,16 +507,30 @@ class PicScan_GUI(Tkinter.Tk):
 
     def keypress(self, event):
         if event.char and event.char in 'asdwhe':
-            if   event.char == 'd': self.fman.delALL()
-            elif event.char == 'w': self.fman.saveNEF()
+            if   event.char == 'd':
+                if self.mode == 'single':
+                    self.fman.trash_image()
+                elif self.mode == 'paired':
+                    self.fman.delALL()
+            elif event.char == 'w':
+                if self.mode == 'single':
+                    pass
+                elif self.mode == 'paired':
+                    self.fman.saveNEF()
             elif event.char == 's':
-                if self.fman.hasJPG() == False:
-                    self.disp_image.make_jpg()
-                self.fman.saveJPG()
+                if self.mode == 'single':
+                    self.fman.save_image()
+                elif self.mode == 'paired':
+                    if self.fman.hasJPG() == False:
+                        self.disp_image.make_jpg()
+                    self.fman.saveJPG()
             elif event.char == 'a':
-                if self.fman.hasJPG() == False:
-                    self.disp_image.make_jpg()
-                self.fman.saveALL()
+                if self.mode == 'single':
+                    self.fman.save_image()
+                elif self.mode == 'paired':
+                    if self.fman.hasJPG() == False:
+                        self.disp_image.make_jpg()
+                    self.fman.saveALL()
             elif event.char == 'h':
                 self.dat['histogram'] = not self.dat.get('histogram')
                 self.f.set_visible( self.dat['histogram'] )
@@ -538,7 +569,6 @@ class PicScan_GUI(Tkinter.Tk):
             except:
                 self.disp_image = None
 
-        thread.start_new_thread( self.preload_images, () )
 
 
         if len(self.imdatabase) > 12:
@@ -551,31 +581,51 @@ class PicScan_GUI(Tkinter.Tk):
 
 
     def preload_images(self):
-        for i in range(1,4):
-            filename = self.fman.load(i, False)
-            if filename not in self.imdatabase:
-                self.imdatabase[filename] = DisplayImage( filename )
-                maxW = self.dat['maxWidth']
-                tileW = maxW / 1
-                tileH = self.dat['maxHeight']
-                self.imdatabase[filename].set_thumbnail( (tileW-2,tileH-2), self.dat['main_zoom'] )
-#                self.thumbs[filename] = self.imdatabase[filename].thumbnail
 
-        if len(self.imdatabase) > 12:
-            tmp,tmp = self.imdatabase.popitem(False)
-            del tmp
+        tmp_path = os.path.join( os.getcwd(), 'tmp' )
+        if not os.path.exists( tmp_path ):
+            os.mkdir( tmp_path )
+
+        for filename in self.fman.imfiles:
+            filename = os.path.join(self.fman.dir, filename)
+            print 'Finding:', filename
+
+            name = os.path.split( filename )[1]
+            ppm = os.path.join( tmp_path, name[:-3] + 'ppm' )
+            exiffile = os.path.join( tmp_path, name + '.exif' )
+            if os.path.exists( ppm ):
+                continue
+            elif filename.endswith('nef'):
+                im = get_exiftool_jpeg( filename )
+                im.thumbnail((2464,2464), Image.BICUBIC)
+                im.save( ppm, quality=99 )
+                exif = get_exiftool_exif( filename )
+                with open(exiffile, 'w') as wfile:
+                    pickle.dump(exif, wfile )
+            elif filename.endswith('jpg'):
+                im = Image.open( filename )
+                im.thumbnail((2464,2464), Image.BICUBIC)
+                im.save( ppm, quality=99 )
+                exif = get_exiftool_exif( filename )
+                with open(exiffile, 'w') as wfile:
+                    pickle.dump(exif, wfile )
 
 
     def deletekey(self, event):
         if self.disp_image:
+            # Delete paired JPG/NEF/DNG if in paired mode
+            if self.mode == 'paired':
+                self.fman.delALL()
+            # Delete individual file if in single mode
+            elif self.mode == 'single':
+                self.fman.trash_image()
 
-            self.fman.delALL()
+            # Load new display image
             filename = self.fman.load()
             if filename not in self.filenames:
                 self.filenames.append( filename )
             self.disp_image = DisplayImage( filename )
             self.show_image()
-
 
 
 

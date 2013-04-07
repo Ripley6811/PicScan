@@ -34,13 +34,15 @@ __version__ = '0.2'
 #===============================================================================
 # IMPORT STATEMENTS
 #===============================================================================
-from os import remove
+from os import remove, path, getcwd
+import os
 from PIL import Image, ImageDraw, ImageTk, ExifTags, ImageFilter
 #from numpy import *  # IMPORTS ndarray(), arange(), zeros(), ones()
-from collections import OrderedDict
+from collections import OrderedDict as odict
 import cv2
 import subprocess
 from StringIO import StringIO
+import pickle
 
 
 #===============================================================================
@@ -55,14 +57,21 @@ class DisplayImage:
         self.ID = ID
         self.filename = im_filename
 
-
-        if self.filename.endswith('nef'):
+        tmp_path = os.path.join( os.getcwd(), 'tmp' )
+        if not os.path.exists( tmp_path ):
+            os.mkdir( tmp_path )
+        name = os.path.split( self.filename )[1]
+        ppm = os.path.join( tmp_path, name[:-3] + 'ppm' )
+        if os.path.exists( ppm ):
+            self.im = Image.open( ppm )
+        elif self.filename.endswith('nef'):
             self.im = get_exiftool_jpeg( im_filename )
+            self.im.thumbnail((2048,2048), Image.BICUBIC)
+            self.im.save( ppm, quality=99 )
         elif self.filename.endswith('jpg'):
             self.im = Image.open( im_filename )
-#        else:
-#            self.filename = im_filename + '.jpg'
-#            self.im = Image.open( self.filename )
+            self.im.thumbnail((2048,2048), Image.BICUBIC)
+            self.im.save( ppm, quality=99 )
 
         self.scale = scale
         self.fit = fit # SET THE RETURN SCALING BY THE AREA IT MUST FIT INSIDE
@@ -72,17 +81,27 @@ class DisplayImage:
 
         self.thumbnail = None
 
-        self.exif = OrderedDict()
-
-
-
         #TODO: Use exiftool.exe if available otherwise use the simpler PIL tool
-        self.get_exiftool_exif()
+        exiffile = os.path.join( tmp_path, name + '.exif' )
+        if os.path.exists( exiffile ):
+            print 'found exif'
+            with open(exiffile, 'r') as rfile:
+                self.exif = pickle.load( rfile )
+        else:
+            self.exif = get_exiftool_exif( self.filename )
+            with open(exiffile, 'w') as wfile:
+                pickle.dump( self.exif, wfile )
 
-        if self.exif['Orientation'] == 'Rotate 270 CW':
-            self.im = self.im.rotate(90)
-        if self.exif['Orientation'] == 'Rotate 90 CW':
-            self.im = self.im.rotate(270)
+
+
+
+        try:
+            if self.exif['Orientation'] == 'Rotate 270 CW':
+                self.im = self.im.rotate(90)
+            if self.exif['Orientation'] == 'Rotate 90 CW':
+                self.im = self.im.rotate(270)
+        except:
+            pass
         self.size = self.im.size
         self.cropbox = (0, 0, self.size[0], self.size[1])
         self.focus = (self.size[0]/2,self.size[1]/2)
@@ -196,7 +215,6 @@ class DisplayImage:
              'Focus Distance',
              'Shutter Count',
              'AF Fine Tune Adj',
-             'Color Space',
              'Exposure Mode', 'Contrast', 'Saturation',
              'Sharpness','Auto Focus',
              'Depth Of Field', 'Field Of View',
@@ -207,72 +225,16 @@ class DisplayImage:
 #        print ex.keys()
 #        print ex['Orientation']
 
-        exifsubset = OrderedDict()
+        exifsubset = odict()
 
         for tag in tags:
             exifsubset[tag] = self.exif.get(tag)
 
-#        make = ex.get('Make')
-#        model = ex.get('Model')
-#
-#        if ex.get('Model'): exifsubset['Model'] = ex.get('Model')
-#        extime = ex.get('ExposureTime')
-#        if extime:
-#            exifsubset.append( 'Speed: ' + '{:.4f}'.format( extime[0]/float(extime[1])) + ' (1/'+str(extime[1]/extime[0]) + ')' )
-#        aperture = ex.get('FNumber')
-#        if aperture:
-#            exifsubset.append( 'Aperture: f/' + str( aperture[0]/float(aperture[1]) ) )
-#        iso = ex.get('ISOSpeedRatings')
-#        if iso:
-#            exifsubset.append( 'ISO speed: ' + str( iso ) )
-#        flen = ex.get('FocalLength')
-#        if flen:
-#            exifsubset.append( 'FocalLength: ' + str( flen[0]/float(flen[1]))  + 'mm' )
-#        if ex.get('Flash'):
-#            exifsubset
-
-
-#        print self.exif
-#        print type(self.exif)
-#        if self.exif.get('MakerNote'):
-#            print repr(self.exif.get('MakerNote'))
 
         return exifsubset
 
 
-    def get_exiftool_exif(self):
-        exifdata = subprocess.check_output(['exiftool.exe',
-                                 self.filename], shell=True)
-        exifdata = exifdata.splitlines()
-        for i, each in enumerate(exifdata):
-            tag,val = each.split(': ', 1)
-            self.exif[tag.strip()] = val.strip()
 
-
-
-    def get_exiftool_thumbnail(self):
-        try:
-            im_binary = subprocess.check_output(['exiftool.exe',
-                                                  self.filename,
-                                                  '-thumbnailimage',
-                                                  '-b'], shell=True)
-            image = Image.open( StringIO(im_binary) )
-            return image
-        except:
-            return None
-
-
-
-    def get_exiftool_preview(self):
-        try:
-            im_binary = subprocess.check_output(['exiftool.exe',
-                                                  self.filename,
-                                                  '-previewimage',
-                                                  '-b'], shell=True)
-            image = Image.open( StringIO(im_binary) )
-            return image
-        except:
-            return None
 
 
 
@@ -378,7 +340,7 @@ class DisplayImage:
         subprocess.call(['exiftool.exe',
                          savename,
                          '-Orientation=Horizontal (normal)'], shell=True)
-        remove(savename + '_original')
+        os.remove(savename + '_original')
 
 
 
@@ -398,6 +360,42 @@ def get_exiftool_jpeg(filename):
         im_binary = subprocess.check_output(['exiftool.exe',
                                               filename,
                                               '-JpgFromRaw',
+                                              '-b'], shell=True)
+        image = Image.open( StringIO(im_binary) )
+        return image
+    except:
+        return None
+
+def get_exiftool_exif(filename):
+    exifdata = subprocess.check_output(['exiftool.exe',
+                             filename], shell=True)
+    exifdata = exifdata.splitlines()
+    exif = odict()
+    for i, each in enumerate(exifdata):
+        tag,val = each.split(': ', 1)
+        exif[tag.strip()] = val.strip()
+    return exif
+
+
+
+def get_exiftool_thumbnail(filename):
+    try:
+        im_binary = subprocess.check_output(['exiftool.exe',
+                                              filename,
+                                              '-thumbnailimage',
+                                              '-b'], shell=True)
+        image = Image.open( StringIO(im_binary) )
+        return image
+    except:
+        return None
+
+
+
+def get_exiftool_preview(filename):
+    try:
+        im_binary = subprocess.check_output(['exiftool.exe',
+                                              filename,
+                                              '-previewimage',
                                               '-b'], shell=True)
         image = Image.open( StringIO(im_binary) )
         return image
